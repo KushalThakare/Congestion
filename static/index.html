@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CongestionNet — Live Network Traffic Monitoring</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Vanilla CSS link -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 2v3M12 19v3M20 12h3M1 12h3M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12M18.36 18.36l-2.12-2.12M7.76 7.76L5.64 5.64"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="logo-title">CongestionNet</h1>
+                    <p class="logo-subtitle">Real-time ML Packet Analyzer</p>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h2 class="section-title">tshark Settings</h2>
+                <div class="input-group">
+                    <label for="tshark-path">tshark Executable Path</label>
+                    <input type="text" id="tshark-path" value="C:\Program Files\Wireshark\tshark.exe">
+                </div>
+                <div class="input-group">
+                    <label for="network-interface">Network Interface</label>
+                    <input type="text" id="network-interface" placeholder="e.g. Wi-Fi or 1">
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="slider-header">
+                    <h2 class="section-title">Congestion Threshold</h2>
+                    <span id="threshold-val">0.50</span>
+                </div>
+                <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.50" class="slider">
+                <p class="slider-help">Probability limit to flag a packet as congested.</p>
+            </div>
+
+            <div class="action-buttons">
+                <button id="btn-start" class="btn btn-primary">Start Analysis</button>
+                <button id="btn-stop" class="btn btn-secondary" disabled>Stop Capture</button>
+            </div>
+
+            <div class="model-info">
+                <h3 class="info-header">Active Model Details</h3>
+                <div class="info-row">
+                    <span>Algorithm:</span>
+                    <span>Random Forest</span>
+                </div>
+                <div class="info-row">
+                    <span>Features:</span>
+                    <span>6 (TCP/IP Handshake)</span>
+                </div>
+                <div class="info-row">
+                    <span>Train Accuracy:</span>
+                    <span>99.8%</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard -->
+        <main class="main-content">
+            <!-- Header Bar -->
+            <header class="header-bar">
+                <div class="status-indicator">
+                    <span id="status-dot" class="dot dot-idle"></span>
+                    <span id="status-text">System Idle</span>
+                </div>
+                <div class="connection-status">
+                    <span id="conn-text">Disconnected</span>
+                    <span id="conn-dot" class="dot dot-error"></span>
+                </div>
+            </header>
+
+            <!-- Alert Banner -->
+            <div id="alert-banner" class="alert-box alert-idle">
+                System is idle. Click "Start Analysis" to begin capturing.
+            </div>
+
+            <!-- Stats grid -->
+            <section class="stats-grid">
+                <div class="stat-card c-blue">
+                    <span class="stat-label">Packets Scanned</span>
+                    <h3 id="stat-total" class="stat-value">0</h3>
+                    <p class="stat-sub">cumulative total</p>
+                </div>
+                <div class="stat-card c-green" id="card-rate">
+                    <span class="stat-label">Congestion Rate</span>
+                    <h3 id="stat-rate" class="stat-value">0.0%</h3>
+                    <p id="stat-flagged" class="stat-sub">0 packets flagged</p>
+                </div>
+                <div class="stat-card c-purple">
+                    <span class="stat-label">Avg Probability</span>
+                    <h3 id="stat-avg" class="stat-value">0.000</h3>
+                    <p class="stat-sub">rolling window</p>
+                </div>
+                <div class="stat-card c-yellow" id="card-last">
+                    <span class="stat-label">Last Probability</span>
+                    <h3 id="stat-last" class="stat-value">0.000</h3>
+                    <p id="stat-last-label" class="stat-sub">No data yet</p>
+                </div>
+                <div class="stat-card c-cyan">
+                    <span class="stat-label">TCP RTO</span>
+                    <h3 id="stat-rto" class="stat-value">0 <span class="stat-unit">ms</span></h3>
+                    <p class="stat-sub">retransmission timeout</p>
+                </div>
+                <div class="stat-card c-magenta">
+                    <span class="stat-label">TCP RTT</span>
+                    <h3 id="stat-rtt" class="stat-value">0 <span class="stat-unit">ms</span></h3>
+                    <p class="stat-sub">round-trip time</p>
+                </div>
+            </section>
+
+            <!-- Charts Section -->
+            <section class="charts-section">
+                <!-- Large line timeline -->
+                <div class="chart-container timeline-chart">
+                    <h3 class="chart-title">Congestion Probability Timeline</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Small charts side by side -->
+                <div class="small-charts-grid">
+                    <div class="chart-container">
+                        <h3 class="chart-title">Current Features Load</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="featuresChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <h3 class="chart-title">Rolling Congestion Probability</h3>
+                        <div class="chart-wrapper">
+                            <canvas id="gaugeChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Terminal log -->
+            <section class="terminal-section">
+                <div class="terminal-header">
+                    <div class="terminal-title">Packet Feed Log — Real-Time Predictions</div>
+                    <div class="terminal-actions">
+                        <button id="btn-clear-terminal" class="btn-clear">Clear Log</button>
+                    </div>
+                </div>
+                <div id="terminal-body" class="terminal-body">
+                    <div class="terminal-row terminal-idle">[SYSTEM] WebSockets ready. Press start...</div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

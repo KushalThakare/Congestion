@@ -57,7 +57,7 @@ def main():
 
     print("\nPipeline complete.")
     if not args.no_plots:
-        print("Plots saved in → results/")
+        print("Plots saved in -> results/")
     return metrics
 
 

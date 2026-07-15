@@ -73,42 +73,48 @@ def load_nsl_kdd(data_dir="data"):
     return train_df, test_df
 
 
-def generate_synthetic_dataset(n=2000, save_path="data/dataset.csv"):
+def generate_synthetic_dataset(n=6000, save_path="data/dataset.csv"):
     """
-    Realistic synthetic fallback.
-    All 4 features contribute meaningfully to the congestion label,
-    with added noise so the model has to actually learn.
+    Realistic synthetic dataset aligned with live dashboard metrics.
+    Features: packet_size, rto, retransmission, window_size, packet_rate, rtt.
     """
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     np.random.seed(42)
 
-    packet_rate   = np.random.randint(100, 1000, n)
-    rtt           = np.random.randint(10, 300, n)
-    queue_length  = np.random.randint(1, 100, n)
-    packet_loss   = np.random.randint(0, 15, n)
+    packet_size = np.random.randint(60, 1500, n).astype(float)
+    rto         = np.random.uniform(50, 400, n)
+    retrans     = np.random.poisson(0.3, n).astype(float)
+    window_size = np.random.randint(8000, 65535, n).astype(float)
+    packet_rate = np.random.randint(100, 1000, n).astype(float)
+    rtt         = np.random.uniform(10, 200, n)
 
     # All features contribute to a congestion score (weighted)
-    congestion_score = (
-        (packet_rate  / 1000) * 0.35 +
-        (queue_length / 100)  * 0.30 +
-        (packet_loss  / 15)   * 0.20 +
-        (rtt          / 300)  * 0.15
+    score = (
+        (packet_rate / 1000)        * 0.30 +
+        (rto / 400)                 * 0.25 +
+        (retrans / 5)               * 0.20 +
+        (1 - window_size / 65535)   * 0.15 +
+        (rtt / 200)                 * 0.10
     )
+    congestion = ((score + np.random.normal(0, 0.06, n)) > 0.50).astype(int)
 
-    # Add noise so threshold isn't perfectly clean
-    noise = np.random.normal(0, 0.06, n)
-    congestion = ((congestion_score + noise) > 0.50).astype(int)
+    # Adjust feature values for congested scenarios to look realistic
+    rto[congestion == 1]         *= np.random.uniform(2, 5, congestion.sum())
+    window_size[congestion == 1] *= np.random.uniform(0.1, 0.4, congestion.sum())
+    retrans[congestion == 1]     += np.random.randint(3, 10, congestion.sum())
 
     data = pd.DataFrame({
-        'packet_rate':  packet_rate,
-        'rtt':          rtt,
-        'queue_length': queue_length,
-        'packet_loss':  packet_loss,
-        'congestion':   congestion,
+        'packet_size':    packet_size,
+        'rto':            rto,
+        'retransmission': retrans,
+        'window_size':    window_size,
+        'packet_rate':    packet_rate,
+        'rtt':            rtt,
+        'congestion':     congestion,
     })
 
     data.to_csv(save_path, index=False)
-    print(f"Synthetic dataset saved → {save_path}")
+    print(f"Synthetic dataset saved -> {save_path}")
     print(f"Congestion rate: {congestion.mean():.2%} ({congestion.sum()} / {n} samples)")
     return data
 
@@ -116,14 +122,12 @@ def generate_synthetic_dataset(n=2000, save_path="data/dataset.csv"):
 def generate_dataset(use_real=True, data_dir="data"):
     """
     Main entry point.
-    Tries NSL-KDD first; falls back to realistic synthetic if download fails.
+    Since NSL-KDD uses connection-level metrics which are incompatible with 
+    real-time packet-level detection, we force the packet-level synthetic generator.
     """
     if use_real:
-        success = download_nsl_kdd(data_dir)
-        if success:
-            return load_nsl_kdd(data_dir)
-        else:
-            print("Falling back to synthetic dataset...")
+        print("Note: Real-time dashboard uses packet-level features. NSL-KDD dataset is connection-level and incompatible with live capture.")
+        print("Forcing generation of packet-level synthetic dataset for dashboard compatibility.")
 
     data = generate_synthetic_dataset(save_path=os.path.join(data_dir, "dataset.csv"))
     return data, None  # (train_df, test_df=None) for synthetic

@@ -55,7 +55,7 @@ def _plot_confusion_matrix(y_test, y_pred):
     path = os.path.join(RESULTS_DIR, "confusion_matrix.png")
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"  Saved → {path}")
+    print(f"  Saved -> {path}")
 
 
 def _plot_roc_curve(y_test, y_prob, roc_auc):
@@ -72,7 +72,7 @@ def _plot_roc_curve(y_test, y_prob, roc_auc):
     path = os.path.join(RESULTS_DIR, "roc_curve.png")
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"  Saved → {path}")
+    print(f"  Saved -> {path}")
 
 
 def _plot_feature_importance(model, feature_names, top_n=20):
@@ -95,4 +95,4 @@ def _plot_feature_importance(model, feature_names, top_n=20):
     path = os.path.join(RESULTS_DIR, "feature_importance.png")
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"  Saved → {path}")
+    print(f"  Saved -> {path}")

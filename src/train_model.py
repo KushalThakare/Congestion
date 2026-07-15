@@ -87,7 +87,7 @@ def train(train_df=None, test_df=None, model_type="random_forest",
     if save_model:
         model_path = os.path.join(MODEL_DIR, f"{model_type}_congestion.pkl")
         joblib.dump(model, model_path)
-        print(f"Model saved → {model_path}")
+        print(f"Model saved -> {model_path}")
 
     return model, X_test, y_test, feature_names
 
