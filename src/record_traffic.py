@@ -32,15 +32,15 @@ def record():
     os.makedirs(args.out_dir, exist_ok=True)
     out_file = os.path.join(args.out_dir, f"{args.label}.pcap")
 
-    cmd = [tshark_path, '-a', f'duration:{args.duration}', '-w', out_file]
-    if args.interface and args.interface.strip():
-        cmd.extend(['-i', args.interface.strip()])
+    target_iface = args.interface.strip() if args.interface else "Wi-Fi"
+
+    cmd = [tshark_path, '-a', f'duration:{args.duration}', '-w', out_file, '-i', target_iface]
 
     print("=" * 60)
     print(f"  Recording Session: [{args.label.upper()}]")
     print("=" * 60)
     print(f"  Duration   : {args.duration} seconds")
-    print(f"  Interface  : {args.interface or 'Default System Interface'}")
+    print(f"  Interface  : {target_iface}")
     print(f"  Saving to  : {out_file}")
     print(f"  Status     : Recording active... Perform your [{args.label}] traffic activities now!")
     print("=" * 60)

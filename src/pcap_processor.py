@@ -30,6 +30,8 @@ def process_pcap_file(pcap_path: str, is_congested: int, tshark_path: str = None
     cmd = [
         tshark_path,
         '-r', pcap_path,
+        '-Y', 'tcp',
+        '-c', '25000',
         '-T', 'fields',
         '-e', 'frame.len',
         '-e', 'tcp.analysis.rto',
