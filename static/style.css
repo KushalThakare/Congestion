@@ -684,3 +684,55 @@ body {
     background: none;
     border: none;
 }
+
+/* ==========================================================================
+   RESPONSIVE DESIGN FOR MOBILE & TABLETS
+   ========================================================================== */
+@media (max-width: 1024px) {
+    .app-container {
+        grid-template-columns: 260px 1fr;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .app-container {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        padding: 1.2rem;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.8rem;
+    }
+
+    .small-charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .header-bar {
+        padding: 0.8rem 1rem;
+    }
+
+    .terminal-body {
+        height: 180px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .logo-title {
+        font-size: 1.2rem;
+    }
+}
