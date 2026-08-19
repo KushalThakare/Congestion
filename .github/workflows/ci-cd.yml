@@ -1,0 +1,37 @@
+name: CongestionNet CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Test App Modules & Model Loading
+      run: |
+        python -c "from app import app, find_tshark_path; print('FastAPI App and Helper modules validated successfully!')"
+
+    - name: Test Dataset Processing & ML Inference Pipeline
+      run: |
+        python -c "from src.aggregator import SlidingWindowAggregator; agg = SlidingWindowAggregator(); feats = agg.add_packet({'packet_size': 1000, 'rto': 50, 'retransmission': 0, 'window_size': 65535, 'packet_rate': 200, 'rtt': 20}); print('Aggregator Windowed Features:', list(feats.keys()))"
+
+    - name: Build Docker Container
+      run: |
+        docker build -t congestion-net:latest .
