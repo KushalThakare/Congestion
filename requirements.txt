@@ -6,3 +6,4 @@ joblib>=1.2
 fastapi
 uvicorn
 websockets
+psutil

@@ -65,39 +65,11 @@ def build_model():
     from sklearn.preprocessing import StandardScaler
     from sklearn.pipeline import Pipeline
     from sklearn.metrics import roc_auc_score, accuracy_score
+    from src.generate_data import generate_synthetic_dataset
 
-    np.random.seed(42)
-    n = 6000
-
-    packet_size = np.random.randint(60, 1500, n).astype(float)
-    rto         = np.random.uniform(50, 400, n)
-    retrans     = np.random.poisson(0.3, n).astype(float)
-    window_size = np.random.randint(8000, 65535, n).astype(float)
-    packet_rate = np.random.randint(100, 1000, n).astype(float)
-    rtt         = np.random.uniform(10, 200, n)
-
-    score = (
-        (packet_rate / 1000)        * 0.30 +
-        (rto / 400)                 * 0.25 +
-        (retrans / 5)               * 0.20 +
-        (1 - window_size / 65535)   * 0.15 +
-        (rtt / 200)                 * 0.10
-    )
-    y = ((score + np.random.normal(0, 0.06, n)) > 0.50).astype(int)
-
-    # Make congested samples realistic
-    rto[y==1]         *= np.random.uniform(2, 5, y.sum())
-    window_size[y==1] *= np.random.uniform(0.1, 0.4, y.sum())
-    retrans[y==1]     += np.random.randint(3, 10, y.sum())
-
-    X = pd.DataFrame({
-        'packet_size':    packet_size,
-        'rto':            rto,
-        'retransmission': retrans,
-        'window_size':    window_size,
-        'packet_rate':    packet_rate,
-        'rtt':            rtt,
-    })
+    data = generate_synthetic_dataset(n=6000)
+    X = data.drop('congestion', axis=1)
+    y = data['congestion']
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, stratify=y, random_state=42
@@ -118,8 +90,11 @@ def build_model():
 
 MODEL, FEATURES, ROC_AUC, ACCURACY = build_model()
 
-def predict(pkt: dict) -> float:
-    row = pd.DataFrame([{f: pkt.get(f, 0.0) for f in FEATURES}])
+from src.aggregator import SlidingWindowAggregator
+DASHBOARD_AGGREGATOR = SlidingWindowAggregator(window_size_sec=1.5)
+
+def predict(windowed_features: dict) -> float:
+    row = pd.DataFrame([{f: windowed_features.get(f, 0.0) for f in FEATURES}])
     return float(MODEL.predict_proba(row)[0][1])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +104,8 @@ def predict(pkt: dict) -> float:
 def simulate_thread():
     rng = np.random.default_rng(int(time.time()))
     t   = 0
+    sim_time = time.time()
+    DASHBOARD_AGGREGATOR.reset()
     while G.running and G.mode == "simulate":
         phase = (t // 25) % 3      # 0=normal  1=congested  2=recovery
         if phase == 0:
@@ -141,11 +118,12 @@ def simulate_thread():
                 rtt           = float(rng.uniform(8,   55)),
             )
         elif phase == 1:
+            win = max(3000.0, 65535.0 - ((t % 25) * 2200.0) + rng.uniform(-1000, 1000))
             pkt = dict(
                 packet_size   = float(rng.integers(60,  400)),
                 rto           = float(rng.uniform(900, 2800)),
-                retransmission= float(rng.poisson(5) + 3),
-                window_size   = float(rng.integers(3000, 12000)),
+                retransmission= float(rng.poisson(2) + 1),
+                window_size   = win,
                 packet_rate   = float(rng.integers(750, 1000)),
                 rtt           = float(rng.uniform(160, 290)),
             )

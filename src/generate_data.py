@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import urllib.request
+from src.aggregator import SlidingWindowAggregator
 
 # NSL-KDD column names
 NSL_KDD_COLUMNS = [
@@ -17,8 +18,6 @@ NSL_KDD_COLUMNS = [
     'dst_host_rerror_rate', 'dst_host_srv_rerror_rate', 'label', 'difficulty'
 ]
 
-# NSL-KDD attack types → congestion-relevant labels
-# We map DoS (Denial of Service) attacks as congestion=1, normal=0
 DOS_ATTACKS = {'neptune', 'smurf', 'pod', 'teardrop', 'land', 'back', 'apache2',
                'udpstorm', 'processtable', 'mailbomb'}
 
@@ -58,12 +57,10 @@ def load_nsl_kdd(data_dir="data"):
         )
         df.drop(columns=['label', 'difficulty'], inplace=True)
 
-    # Encode categorical columns
     cat_cols = ['protocol_type', 'service', 'flag']
     train_df = pd.get_dummies(train_df, columns=cat_cols)
     test_df  = pd.get_dummies(test_df,  columns=cat_cols)
 
-    # Align columns (test may have fewer categories)
     train_df, test_df = train_df.align(test_df, join='left', axis=1, fill_value=0)
 
     print(f"NSL-KDD loaded — Train: {len(train_df)} rows | Test: {len(test_df)} rows")
@@ -75,63 +72,98 @@ def load_nsl_kdd(data_dir="data"):
 
 def generate_synthetic_dataset(n=6000, save_path="data/dataset.csv"):
     """
-    Realistic synthetic dataset aligned with live dashboard metrics.
-    Features: packet_size, rto, retransmission, window_size, packet_rate, rtt.
+    Realistic time-series synthetic dataset aggregated using a 1.5-second sliding window.
+    Features: average_rtt, retransmission_rate, throughput_mbps, window_size_trend, average_rto, current_window_size.
     """
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
 
-    packet_size = np.random.randint(60, 1500, n).astype(float)
-    rto         = np.random.uniform(50, 400, n)
-    retrans     = np.random.poisson(0.3, n).astype(float)
-    window_size = np.random.randint(8000, 65535, n).astype(float)
-    packet_rate = np.random.randint(100, 1000, n).astype(float)
-    rtt         = np.random.uniform(10, 200, n)
+    aggregator = SlidingWindowAggregator(window_size_sec=1.5)
+    rows = []
 
-    # All features contribute to a congestion score (weighted)
-    score = (
-        (packet_rate / 1000)        * 0.30 +
-        (rto / 400)                 * 0.25 +
-        (retrans / 5)               * 0.20 +
-        (1 - window_size / 65535)   * 0.15 +
-        (rtt / 200)                 * 0.10
-    )
-    congestion = ((score + np.random.normal(0, 0.06, n)) > 0.50).astype(int)
+    current_time = 0.0
+    phase = 0  # 0: normal, 1: congested, 2: recovery
 
-    # Adjust feature values for congested scenarios to look realistic
-    rto[congestion == 1]         *= np.random.uniform(2, 5, congestion.sum())
-    window_size[congestion == 1] *= np.random.uniform(0.1, 0.4, congestion.sum())
-    retrans[congestion == 1]     += np.random.randint(3, 10, congestion.sum())
+    for i in range(n):
+        # Change phase every ~70 packets
+        if i % 70 == 0:
+            phase = (phase + 1) % 3
 
-    data = pd.DataFrame({
-        'packet_size':    packet_size,
-        'rto':            rto,
-        'retransmission': retrans,
-        'window_size':    window_size,
-        'packet_rate':    packet_rate,
-        'rtt':            rtt,
-        'congestion':     congestion,
-    })
+        if phase == 0:
+            # Normal network phase
+            dt = rng.uniform(0.005, 0.02)
+            pkt = dict(
+                packet_size   = float(rng.integers(400, 1460)),
+                rto           = float(rng.uniform(40, 160)),
+                retransmission= float(rng.poisson(0.02)),
+                window_size   = float(rng.integers(45000, 65535)),
+                packet_rate   = float(rng.integers(100, 300)),
+                rtt           = float(rng.uniform(8, 45)),
+            )
+            is_congested = 0
+        elif phase == 1:
+            # Congested network phase (window reduction, high RTT & RTO, retransmissions)
+            dt = rng.uniform(0.015, 0.05)
+            win = max(3000.0, 65535.0 - ((i % 70) * 800.0) + rng.uniform(-1000, 1000))
+            pkt = dict(
+                packet_size   = float(rng.integers(60, 400)),
+                rto           = float(rng.uniform(800, 2500)),
+                retransmission= float(rng.poisson(0.8) + 1),
+                window_size   = win,
+                packet_rate   = float(rng.integers(700, 1200)),
+                rtt           = float(rng.uniform(150, 350)),
+            )
+            is_congested = 1
+        else:
+            # Recovery phase (window growing, latency dropping)
+            dt = rng.uniform(0.008, 0.025)
+            win = min(50000.0, 10000.0 + ((i % 70) * 600.0) + rng.uniform(-1000, 1000))
+            pkt = dict(
+                packet_size   = float(rng.integers(200, 1200)),
+                rto           = float(rng.uniform(150, 600)),
+                retransmission= float(rng.poisson(0.1)),
+                window_size   = win,
+                packet_rate   = float(rng.integers(200, 600)),
+                rtt           = float(rng.uniform(35, 110)),
+            )
+            is_congested = 0
 
+        current_time += dt
+        feats = aggregator.add_packet(pkt, current_time=current_time)
+        feats['congestion'] = is_congested
+        rows.append(feats)
+
+    data = pd.DataFrame(rows)
     data.to_csv(save_path, index=False)
-    print(f"Synthetic dataset saved -> {save_path}")
-    print(f"Congestion rate: {congestion.mean():.2%} ({congestion.sum()} / {n} samples)")
+    print(f"Synthetic windowed dataset saved -> {save_path}")
+    print(f"Congestion rate: {data['congestion'].mean():.2%} ({data['congestion'].sum()} / {n} samples)")
     return data
 
 
-def generate_dataset(use_real=True, data_dir="data"):
-    """
-    Main entry point.
-    Since NSL-KDD uses connection-level metrics which are incompatible with 
-    real-time packet-level detection, we force the packet-level synthetic generator.
-    """
+def load_pcap_dataset(pcap_dir="data/pcaps", save_path="data/real_world_dataset.csv"):
+    """Load and extract rolling window features from organic PCAP files."""
+    from src.pcap_processor import process_all_pcaps
+    df = process_all_pcaps(pcap_dir=pcap_dir, save_path=save_path)
+    return df
+
+
+def generate_dataset(use_real=False, use_pcap=False, data_dir="data"):
+    if use_pcap:
+        df = load_pcap_dataset(pcap_dir=os.path.join(data_dir, "pcaps"),
+                               save_path=os.path.join(data_dir, "real_world_dataset.csv"))
+        if not df.empty:
+            return df, None
+        print("Falling back to synthetic time-series generator because no PCAP data was found.")
+
     if use_real:
         print("Note: Real-time dashboard uses packet-level features. NSL-KDD dataset is connection-level and incompatible with live capture.")
         print("Forcing generation of packet-level synthetic dataset for dashboard compatibility.")
 
     data = generate_synthetic_dataset(save_path=os.path.join(data_dir, "dataset.csv"))
-    return data, None  # (train_df, test_df=None) for synthetic
+    return data, None
 
 
 if __name__ == "__main__":
     generate_dataset(use_real=True)
+
+

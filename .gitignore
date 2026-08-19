@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.vscode/
+.idea/
+data/pcaps/*.pcap
+data/pcaps/*.pcapng

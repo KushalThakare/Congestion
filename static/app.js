@@ -101,10 +101,10 @@ const ctxFeatures = document.getElementById('featuresChart').getContext('2d');
 const featuresChart = new Chart(ctxFeatures, {
     type: 'bar',
     data: {
-        labels: ['Packet Size (B)', 'RTO (ms)', 'Retransmissions', 'Window Size (KB)', 'Rate (pkts/s)', 'RTT (ms)'],
+        labels: ['Avg RTT (ms)', 'Retrans Rate (%)', 'Throughput (Mbps)', 'Win Trend (B/s)', 'Avg RTO (ms)', 'Win Size (KB)'],
         datasets: [{
             data: [0, 0, 0, 0, 0, 0],
-            backgroundColor: [colors.fjord, colors.sage, colors.amber, colors.crimson, colors.sage, colors.crimson],
+            backgroundColor: [colors.fjord, colors.crimson, colors.sage, colors.amber, colors.fjord, colors.sage],
             borderRadius: 4,
             barThickness: 12
         }]
@@ -233,21 +233,51 @@ function connectWebSocket() {
     };
 }
 
+async function loadInterfaces() {
+    try {
+        const res = await fetch('/api/interfaces');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        if (data.tshark_path) {
+            tsharkPathInput.value = data.tshark_path;
+        } else {
+            tsharkPathInput.value = '';
+            tsharkPathInput.placeholder = 'Native Real Network Engine Active';
+        }
+
+        if (data.interfaces && Array.isArray(data.interfaces)) {
+            networkIfaceInput.innerHTML = '';
+            data.interfaces.forEach(iface => {
+                const opt = document.createElement('option');
+                opt.value = iface.id;
+                opt.textContent = iface.name;
+                networkIfaceInput.appendChild(opt);
+            });
+        }
+    } catch (err) {
+        console.error('Failed to load interfaces:', err);
+    }
+}
+
 function startCapture() {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         appendLog('[SYSTEM] Cannot start: WebSockets not connected.', 'error');
         return;
     }
     
-    // Clear previous simulation run stats
+    // Clear previous stats
     resetStats();
+
+    const selectedIface = networkIfaceInput.value;
+    mode = 'live';
     
     const config = {
         action: 'start',
-        mode: mode,
+        mode: 'live',
         threshold: threshold,
         tshark_path: tsharkPathInput.value,
-        interface: networkIfaceInput.value
+        interface: selectedIface
     };
     
     socket.send(JSON.stringify(config));
@@ -389,8 +419,16 @@ function processPacket(msg) {
     }
     
     // Set network metrics
-    statRto.innerHTML = `${pkt.rto.toFixed(0)} <span class="stat-unit">ms</span>`;
-    statRtt.innerHTML = `${pkt.rtt.toFixed(0)} <span class="stat-unit">ms</span>`;
+    const wf = msg.windowed_features || {};
+    const avgRtt = wf.average_rtt !== undefined ? wf.average_rtt : pkt.rtt;
+    const retransRate = wf.retransmission_rate !== undefined ? wf.retransmission_rate * 100 : pkt.retransmission * 100;
+    const throughput = wf.throughput_mbps !== undefined ? wf.throughput_mbps : 0;
+    const winTrend = wf.window_size_trend !== undefined ? wf.window_size_trend : 0;
+    const avgRto = wf.average_rto !== undefined ? wf.average_rto : pkt.rto;
+    const winSize = wf.current_window_size !== undefined ? wf.current_window_size / 1024 : pkt.window_size / 1024;
+
+    statRto.innerHTML = `${avgRto.toFixed(0)} <span class="stat-unit">ms</span>`;
+    statRtt.innerHTML = `${avgRtt.toFixed(0)} <span class="stat-unit">ms</span>`;
     
     // Update Timeline Chart
     timelineChart.data.labels = timeHistory;
@@ -407,14 +445,13 @@ function processPacket(msg) {
     gaugeChart.update('none');
     
     // Update Features Chart
-    // Normalize window size to KB, packet size to bytes, retransmissions, RTO, rate, rtt
     const normalizedData = [
-        pkt.packet_size,
-        pkt.rto,
-        pkt.retransmission * 100, // amplify retransmissions to make them visible on bar
-        pkt.window_size / 1024,
-        pkt.packet_rate,
-        pkt.rtt
+        avgRtt,
+        retransRate,
+        throughput,
+        Math.abs(winTrend) / 100, // scaled for chart visualization
+        avgRto,
+        winSize
     ];
     featuresChart.data.datasets[0].data = normalizedData;
     featuresChart.update('none');
@@ -422,7 +459,7 @@ function processPacket(msg) {
     // Append to Terminal Log
     const labelStr = label === 1 ? 'CONGESTED' : 'NORMAL';
     const logClass = label === 1 ? 'congested' : 'normal';
-    const logText = `[${timestamp}] ${labelStr} | size=${pkt.packet_size.toFixed(0)}B | rto=${pkt.rto.toFixed(0)}ms | win=${pkt.window_size.toFixed(0)} | rate=${pkt.packet_rate.toFixed(0)}pkts/s | rtt=${pkt.rtt.toFixed(0)}ms | prob=${prob.toFixed(3)}`;
+    const logText = `[${timestamp}] ${labelStr} | throughput=${throughput.toFixed(2)}Mbps | retransRate=${retransRate.toFixed(1)}% | avgRtt=${avgRtt.toFixed(0)}ms | winTrend=${winTrend.toFixed(0)} | prob=${prob.toFixed(3)}`;
     appendLog(logText, logClass);
 }
 
@@ -434,5 +471,6 @@ function appendLog(text, className) {
     terminalBody.scrollTop = terminalBody.scrollHeight;
 }
 
-// Connect immediately on page load
+// Connect & load interfaces on page load
 connectWebSocket();
+loadInterfaces();

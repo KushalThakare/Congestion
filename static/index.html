@@ -31,14 +31,16 @@
             </div>
 
             <div class="control-section">
-                <h2 class="section-title">tshark Settings</h2>
+                <h2 class="section-title">Live Network Interface</h2>
                 <div class="input-group">
-                    <label for="tshark-path">tshark Executable Path</label>
-                    <input type="text" id="tshark-path" value="C:\Program Files\Wireshark\tshark.exe">
+                    <label for="network-interface">Active Adapter</label>
+                    <select id="network-interface" class="select-input">
+                        <option value="">Detecting live adapters...</option>
+                    </select>
                 </div>
-                <div class="input-group">
-                    <label for="network-interface">Network Interface</label>
-                    <input type="text" id="network-interface" placeholder="e.g. Wi-Fi or 1">
+                <div class="input-group" style="display:none;">
+                    <label for="tshark-path">tshark Path (Optional)</label>
+                    <input type="text" id="tshark-path" placeholder="Native capture active">
                 </div>
             </div>
 

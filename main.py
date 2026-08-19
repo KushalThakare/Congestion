@@ -17,7 +17,9 @@ from src.evaluate import evaluate
 def parse_args():
     parser = argparse.ArgumentParser(description="Network Congestion Detector")
     parser.add_argument('--synthetic', action='store_true',
-                        help='Use synthetic data instead of NSL-KDD')
+                        help='Use realistic synthetic windowed dataset')
+    parser.add_argument('--real-pcap', action='store_true',
+                        help='Extract rolling features from organic PCAPs in data/pcaps/')
     parser.add_argument('--model', choices=['random_forest', 'gb'],
                         default='random_forest',
                         help='Model type: random_forest | gb (gradient boosting)')
@@ -29,16 +31,16 @@ def parse_args():
 def main():
     args = parse_args()
     model_type = 'gradient_boosting' if args.model == 'gb' else 'random_forest'
-    use_real   = not args.synthetic
 
     print("=" * 55)
     print("  Network Congestion Detection — Starting Pipeline")
     print("=" * 55)
-    print(f"  Data source : {'Synthetic (realistic)' if args.synthetic else 'NSL-KDD'}")
+    source_name = 'Organic PCAPs (data/pcaps/)' if args.real_pcap else 'Synthetic Windowed Time-Series'
+    print(f"  Data source : {source_name}")
     print(f"  Model       : {model_type}")
 
     # Step 1 — Load / Generate Data
-    result = generate_dataset(use_real=use_real)
+    result = generate_dataset(use_real=args.synthetic, use_pcap=args.real_pcap)
     train_df, test_df = result if isinstance(result, tuple) else (result, None)
 
     # Step 2 — Train
